@@ -1,6 +1,6 @@
 # MCPetsUltimate Wiki
 
-MCPetsUltimate adds to MCPets 4.1.6 new pet stats, a real physical / magic combat system, mana, equipment, pet foods, tradeable pet items, a 7-language system and several MCPets fixes. Target server: Paper 1.21.11.
+MCPetsUltimate adds to MCPets 4.1.6 and 4.2.1 new pet stats, a real physical / magic combat system, mana, equipment, pet foods, tradeable pet items, a skills menu with a keybind, a health / mana bar, a 7-language system and several MCPets fixes. Target servers: Paper 1.21.11 and 26.x.
 
 Version 1.0.0. Author: Totomag0. Contributor: N0TDREAMS.
 
@@ -15,6 +15,8 @@ Version 1.0.0. Author: Totomag0. Contributor: N0TDREAMS.
 - [Pet foods](#pet-foods)
 - [Tradeable pets and /petsbox](#tradeable-pets-and-petsbox)
 - [MythicMobs](#mythicmobs)
+- [Skills menu and keybind](#skills-menu-and-keybind)
+- [Health and mana bar](#health-and-mana-bar)
 - [Lore and menu placeholders](#lore-and-menu-placeholders)
 - [Languages](#languages)
 - [Comfort and protection](#comfort-and-protection)
@@ -23,15 +25,16 @@ Version 1.0.0. Author: Totomag0. Contributor: N0TDREAMS.
 
 ## Installation
 
-Drop `MCPetsUltimate-1.0.x.jar` into `plugins/` and restart. The plugin creates `config.yml`, `petfoods.yml`, `equipment.yml` and the `lang/` folder in `plugins/MCPetsUltimate/`.
+Drop `MCPetsUltimate-1.0.x.jar` into `plugins/` and restart. The plugin creates `config.yml`, `foods.yml`, `equipment.yml` and the `lang/` folder in `plugins/MCPetsUltimate/`. The same jar runs on MCPets 4.1.6 and 4.2.1: the startup log says which MCPets layout it found.
 
 | Plugin | Status | Role |
 | --- | --- | --- |
-| MCPets 4.1.6 | Required | The pets |
+| MCPets 4.1.6 or 4.2.1 | Required | The pets |
 | MythicMobs 5.x | Required | Mobs, mechanics, drops |
-| ModelEngine | Optional | Models, dismount on death |
+| ModelEngine | Optional | Models, dismount on death, bar under the model name |
 | MythicLib | Optional | Elements, `mmodamage`, damage types |
 | LuckPerms | Optional | Required to convert a pet into an item |
+| packetevents | Optional | Advancements key (L) as the skills keybind. 2.13.0 does not load on Paper 26.3: use `SWAP` or `SNEAK_SWAP` there |
 
 ### Commands
 
@@ -40,8 +43,11 @@ Drop `MCPetsUltimate-1.0.x.jar` into `plugins/` and restart. The plugin creates 
 | `/mcpetsultimate reload` | `mcpetsultimate.admin` | Reloads the config, language, pet stats and foods |
 | `/mcpetsultimate equipment` | `mcpetsultimate.admin` | Opens the equipment editor |
 | `/mcpetsultimate equipment give <id> [player]` | `mcpetsultimate.admin` | Gives an equipment (stats rolled at random) |
+| `/mcpetsultimate food` | `mcpetsultimate.admin` | Opens the pet food editor |
 | `/mcpetsultimate food give <id> [player] [amount]` | `mcpetsultimate.admin` | Gives a pet food |
 | `/mcpetsultimate pet give <pet> [player] [level] [amount]` | `mcpetsultimate.admin` | Gives a tradeable pet item at the chosen level, full health and mana |
+| `/mcpetsultimate pet signal <signal> [player]` | `mcpetsultimate.admin` | Sends a signal to the summoned pet (`~onSignal:<signal>`). Silent when it works: made for keybinds and console commands |
+| `/petskills [player]` | `mcpetsultimate.skills` | Opens the skills menu of the summoned pet. With a player (operators, console): opens it for that player |
 | `/petsbox` | `mcpetsultimate.box` | Opens the box of duplicate pets |
 | `/mcpets reload` or `/pets reload` | (MCPets) | Also reloads the plugin right after MCPets |
 
@@ -51,7 +57,8 @@ Drop `MCPetsUltimate-1.0.x.jar` into `plugins/` and restart. The plugin creates 
 
 | Permission | Default | Effect |
 | --- | --- | --- |
-| `mcpetsultimate.admin` | OP | Admin commands |
+| `mcpetsultimate.admin` | OP | Admin commands and editors |
+| `mcpetsultimate.skills` | Everyone | Use `/petskills` |
 | `mcpetsultimate.box` | Everyone | Use `/petsbox` |
 | `mcpetsultimate.box.bypasscooldown` | OP | No delay between two box swaps |
 | `mcpetsultimate.name.color` | Everyone | Colors in pet names |
@@ -113,6 +120,8 @@ Tested in game: a 40 melee hit on a pet with PhysicalResistance 5 and Resistance
 - Vanilla sources: harming potions, evoker fangs, guardian beam, Warden sonic boom, Thorns, dragon breath.
 - Everything else is physical: melee, projectiles, `damage{a=40}` without a cause.
 
+With MythicLib, a hit that reaches it without a damage type (a MythicMobs `damage{}` without a magic cause, like `damage{a=<pet.damage>}`) gets the PHYSICAL type, or MAGIC for a magic cause, so the damage indicators show the right symbol. MythicMobs has no `cause=PHYSICAL`: `cause` only takes the Bukkit causes (`ENTITY_ATTACK` by default, `MAGIC`, `POISON`...), and an unknown one breaks the skill line.
+
 ### MythicMobs mob resistances
 
 The 4 keys `PhysicalResistance`, `PhysicalResistancePercent`, `MagicResistance` and `MagicResistancePercent` at the root of a mob file give it the same resistances (modifier base 1). `/mm reload` applies the changes.
@@ -153,7 +162,7 @@ Each pet has a mana pool (`MaxMana`) that refills by `ManaRegen` per second. The
 
 - Spend or give back mana in a skill: `petMana{amount=-50} @self`.
 - Cast a skill only when there is enough mana: condition `petMana{amount=50}`.
-- Give mana with a food: type `MANA` in `petfoods.yml`.
+- Give mana with a food: type `MANA` in the food editor (`/mcpetsultimate food`).
 - Regeneration interval: `mana-regen-interval` (20 ticks = 1 second).
 
 ```yaml
@@ -170,10 +179,21 @@ Archangemana:
 
 Each pet wears three pieces of equipment: a weapon, an armor and a jewel. Their stats add to the pet's while it is summoned.
 
-1. An operator makes the equipment with `/mcpetsultimate equipment`: a menu to choose the id, category, base item, name, lore and stats (text typed in the chat). Everything is saved in `equipment.yml`.
+1. An operator makes the equipment with `/mcpetsultimate equipment`: a menu to choose the id, category, base item, name, lore, look and stats (text typed in the chat). Everything is saved in `equipment.yml`.
 2. Each stat is a fixed value or a range (`1-5`). The range is rolled with 2 decimals when the item is made. Editing the template later does not change the items already given.
 3. Players get the items with `/mcpetsultimate equipment give <id> [player]` or a MythicMobs drop: `- petequipment{id=fire_sword} 1 0.1`.
 4. The owner equips the pet from the Equipment button (iron chestplate) of the MCPets pet menu. Only an equipment of the right category fits each slot, and it exists in one copy only (no duplication).
+5. Players cannot use an equipment themselves: no wearing it (armor slot, right click, shift-click, dispenser), eating, placing, shooting or hitting with it. They get the message `equipment.protected` instead. Items made before this protection existed are not protected.
+
+The top row of the editor sets the look of the item for resource packs. Click to type a value, shift-click to remove it. They need a 1.21.4+ server.
+
+| Button | yml key | Example |
+| --- | --- | --- |
+| Item Model | `item-model` | `mypack:fire_sword` (no namespace = `minecraft:`) |
+| CustomModelData simple | `custom-model-data` | `1001` |
+| CustomModelData float | `custom-model-floats` | `1.5, 2, 3` (placed after the simple one) |
+| CustomModelData string | `custom-model-strings` | `fire, rare` |
+| Tooltip | `tooltip-style` | `mypack:legendary` |
 
 The equipment follows the pet when it becomes an item or goes to the box.
 
@@ -184,15 +204,19 @@ The equipment follows the pet when it becomes an item or goes to the box.
 | MaxMana / ManaRegen | flat | Extra max mana / mana per second |
 | PhysicalResistance / MagicResistance | flat | Extra resistances |
 | PhysicalDamage / MagicDamage | flat | Extra flat damage |
-| PhysicalResistancePercent / MagicResistancePercent | % | Resistance modifier bonuses |
+| MagicResistancePercent | % | Magic resistance modifier bonus |
 | Damage / Resistance / Power | % | Added to the MCPets modifiers (+10 = +10%) |
 | MoveSpeed | % | Movement speed (+10 = +0.1) |
+
+PhysicalResistancePercent is no longer an equipment stat (the Resistance stat already does it). It stays in pet files, MythicMobs mobs and foods.
 
 Category and stat names and the lore lines are in the language file (`equipment:`). The equipment menu layout (slots, materials) is in `equipment-menu:` of `config.yml`, its texts in the language file.
 
 ## Pet foods
 
-Pet foods are defined in `plugins/MCPetsUltimate/petfoods.yml`, apart from the MCPets one. The owner right-clicks their summoned pet with the item, and one item is used (not in creative). Do not put these foods in `plugins/MCPets/petfoods.yml` too: MCPets reads an unknown type as HEALTH.
+Pet foods are made in game with `/mcpetsultimate food` and saved in `plugins/MCPetsUltimate/foods.yml`, apart from the MCPets one. The owner right-clicks their summoned pet with the item, and one item is used (not in creative). Do not put these foods in `plugins/MCPets/petfoods.yml` too: MCPets reads an unknown type as HEALTH.
+
+The old `petfoods.yml` is no longer read: `foods.yml` starts empty, and items given from the old file stop working unless a food is made again with the same id.
 
 | Type | Effect |
 | --- | --- |
@@ -210,14 +234,15 @@ Pet foods are defined in `plugins/MCPetsUltimate/petfoods.yml`, apart from the M
 | Key | Role |
 | --- | --- |
 | `ItemId` | Material (`CARROT`) or MythicMobs item id |
-| `CustomModelData` | Optional |
 | `Name` / `Lore` | Optional, colors allowed. Let several foods share the same item |
 | `Type` / `Power` | Effect and amount |
 | `Operator` | `ADD` (+Power) or `MULTIPLY` (+Power% of the current value). HEALTH / MANA: % of the max. EXP: % of the next level |
-| `Duration` | Buff duration in ticks. The same food given again replaces its buff; different foods stack |
+| `Duration` | Buff duration in ticks (the editor asks seconds). The same food given again replaces its buff; different foods stack |
 | `Cooldown` | Seconds before this food can be given again to the same pet |
 | `Pets` | Ids of the pets that can eat it (all when empty) |
 | `Permission` | Permission needed to give it |
+| `CustomModelData` / `CustomModelFloats` / `CustomModelStrings` | Optional, resource pack model |
+| `ItemModel` / `TooltipStyle` | Optional, resource pack model and tooltip (1.21.4+) |
 
 ```yaml
 SpeedBoost:
@@ -233,6 +258,12 @@ SpeedBoost:
 ```
 
 Buffs are not saved across restarts and end when the pet is revoked or dies. The `food-*` messages are in the `messages:` section of the language file.
+
+### Food editor
+
+- List: left click to edit a food, right click to get one, the anvil to create one (id typed in the chat). A new food starts as an apple healing 10, so it works at once. A food that does not load (bad item or type) shows as a barrier with the reason.
+- Editor: one button per key of the table above. Item: click with an item in hand to take it (MythicMobs items are recognized), or click empty-handed to type an id. Type: left click = next, right click = previous. Duration and Cooldown are typed in seconds. Shift-click clears Name, Lore, Cooldown, Pets, Permission and the look buttons.
+- Each change is saved to `foods.yml` and applied at once, without reload. Texts: `food-editor` in the language file.
 
 ## Tradeable pets and /petsbox
 
@@ -268,6 +299,8 @@ MCPets keeps one pet per id. The extra copies wait in the box.
 
 `type` is `MAGIC` or `PHYSICAL`. `element` takes the MythicLib elements (FIRE, ICE, EARTH, WIND, THUNDER, WATER, DARKNESS, LIGHTNESS) and only works with MythicLib. An unknown element is reported in the console.
 
+A `petAttack` hit counts as MythicMobs skill damage: the pet's `~onAttack` skills do not run on it. For `skill-cancels-melee` ticks after it (10 = half a second by default, `0` = off), the other hits of that pet are cancelled, its melee bite and the damage lines of its `~onAttack` skills: the skill replaces the bite, and a hit is never counted twice as magic and physical.
+
 ### Skill placeholders
 
 For skills cast by the pet (caster = the pet).
@@ -286,6 +319,71 @@ For skills cast by the pet (caster = the pet).
 - `damage{a=40;cause=MAGIC} @target` works with or without MythicLib.
 - `mmodamage{a=40;type=MAGIC} @target` needs MythicLib.
 - `damage{a=40} @target` without a cause is physical.
+- `damage{a=<pet.damage>} @target` in a pet skill: physical hit of PhysicalDamage x DamageModifier, shown with the MythicLib physical symbol.
+
+## Skills menu and keybind
+
+`/petskills` opens a dialog with one button per skill of the summoned pet (1.21.6+ client). A button sends a signal to the pet, like the MCPets signal stick: it triggers `~onSignal:<SIGNAL>` in its MythicMobs skills.
+
+The buttons come from the optional `Skills` section of the MCPets pet file, else from its `Signals` list. `Mana` is shown on the button and checked before the signal is sent.
+
+```yaml
+Skills:
+  HOWL:
+    Name: '<aqua>Ice howl'
+    Description: ['<gray>Magic howl']
+    Mana: 30
+```
+
+| `skills-dialog` key | Default | Role |
+| --- | --- | --- |
+| `columns` | 2 | Buttons per row |
+| `button-width` | 150 | Width of a button |
+| `close-on-use` | true | The dialog closes after a click (false: Escape or the Close button) |
+
+### Keybind
+
+A key runs commands, by default `/petskills` for the player. Section `keybind` of `config.yml`:
+
+| `use` | Key | Note |
+| --- | --- | --- |
+| `ADVANCEMENTS` | Advancements key (L) | Needs packetevents; the advancements screen is closed |
+| `SWAP` | Swap hands key (F) | Items are no longer swapped |
+| `SNEAK_SWAP` | Shift + Swap hands | F alone still swaps the items |
+
+```yaml
+keybind:
+  enabled: true
+  use: SNEAK_SWAP
+  commands:
+  - "[console] petskills {player}"
+```
+
+`[player]` runs the command as the player, `[console]` (default) as the console; `{player}` is the player name. When `use` is `ADVANCEMENTS` without a working packetevents, the console says so at startup: switch to `SWAP` or `SNEAK_SWAP`.
+
+## Health and mana bar
+
+A line under the name of each summoned pet shows its health and mana, updated twice a second. Section `status-bar` of `config.yml`; `/mcpetsultimate reload` applies changes live.
+
+- Vanilla pets: the line rides the pet. The game hides the name of a mob carrying a passenger, so with `include-name: true` the name and its `Lv:` go on a first line.
+- ModelEngine pets: the line follows the visible name tag bone of the model, `model-offset-y` under it. The name stays on the model.
+- `background: false` removes the dark box behind the line, and behind the ModelEngine name of model pets.
+
+| Key | Default | Role |
+| --- | --- | --- |
+| `enabled` | true | Shows the line |
+| `include-name` | true | Name on a first line (vanilla pets) |
+| `format` / `format-no-mana` | hearts, bars, numbers | Text of the line; `format-no-mana` for pets without MaxMana |
+| `bar-length` | 10 | Symbols per bar |
+| `bar-full` / `bar-empty` | `\|` / `\|` | Symbols of the filled and empty part (any text: `■` / `□`, `❤` / `♡`) |
+| `health-color` / `mana-color` / `empty-color` | `&c` / `&9` / `&8` | Colors of the bars |
+| `offset-y` | 0.15 | Height above a vanilla pet |
+| `model-offset-y` | -0.3 | Distance under the model name tag (negative = lower) |
+| `scale` | 1.0 | Text size |
+| `background` | true | Dark box behind the text |
+| `owner-only` | false | Only the owner sees the line |
+
+Placeholders: `%health_bar%` `%health%` `%max_health%` `%health_percent%` `%mana_bar%` `%mana%` `%max_mana%` `%mana_percent%` `%pet%` (pet id). Keep only what you want: bars, numbers or both.
 
 ## Lore and menu placeholders
 
@@ -547,13 +645,17 @@ The German, Spanish, Russian, Chinese and Japanese translations should be checke
 | Feature | How it works | Setting |
 | --- | --- | --- |
 | Colored names | `/pets name` and the rename button keep `&4`, hex and MiniMessage | Permission `mcpetsultimate.name.color` (everyone) |
-| Level above the head | Adds `Lv:<level>` after the name, updated within a second after a level up | `name-tag-suffix` in the language file (`''` = off) |
+| Level above the head | Adds `Lv:<level>` after the name, updated within a second after a level up. A pet never renamed shows the MCPets `DefaultName` (`Pet of %player%`), not `None` | `name-tag-suffix` in the language file (`''` = off); `DefaultName` in `plugins/MCPets/config.yml` |
+| Health and mana bar | A line with bars and numbers under the pet name | `status-bar` (see its section) |
+| Owner in death messages | The death message a tamed pet sends to its owner names the owner of each pet in it: `Pet of Alex Lv:Pup (Alex) was slain by Rex Lv:Alpha (Sam)`. Sent once, never twice | `death-message-owner` in the language file |
+| Skins stay with their owner | Converting a pet into an item resets its MCPets skin to the default. The player who gets the pet back keeps a skin only if they have its permission | Automatic |
 | Auto pickup | The pet picks up the items around it: its inventory first, then the player, the rest stays on the ground. Respects items thrown by the owner and items of another player | `AutoPickupItem` / `AutoPickupRadius` in the pet file, `auto-pickup-interval` |
 | Dismount on death | Riders get off on the killing hit, without riding the death animation | `dismount-on-death`, `debug-dismount` |
 | Other players' pets | A right or left click no longer opens their menu (even for an OP) and shows "This pet belongs to &lt;player&gt;." | Message `pet-not-yours`, permission `mcpetsultimate.pets.others` |
 | Clean MCPets icons | Removes the empty lines MCPets hardcodes in pet icons (around the nickname, before the stats) | `mcpets-menu-hide-blank-lines` |
 | Health after `/mm reload` | The pet health and max health are restored when MythicMobs resets them to the mob file values | Automatic |
 | Reload | `/mcpets reload` also reloads the plugin; stats are re-read at each level up | `reload-stats-on-level-up` |
+| No vanilla right click | A right click on a summoned pet only does what MCPets and the plugin do (menu, mount, foods, signal stick). The vanilla action of its mob is blocked: sitting (wolf, cat, parrot), horse and llama inventory and riding, villager trades, shears, buckets, milk, leads, name tags, dyes, breeding food, saddles, chests. A sitting pet stands up | `block-vanilla-interact` |
 
 ## What the plugin changes in MCPets
 
@@ -569,6 +671,10 @@ The German, Spanish, Russian, Chinese and Japanese translations should be checke
 | The pet menu opens after the last food item | Blocked while feeding |
 | Hardcoded empty lines in pet icons | Removed (`mcpets-menu-hide-blank-lines`) |
 | No plugin reload with MCPets | `/mcpets reload` also reloads the plugin |
+| MCPets 4.2.1 on Paper 26: a dying pet is killed again in a loop (StackOverflowError) | The pet dies once and its respawn timer starts |
+| After a restart, every pet of a joining player gets a respawn timer, so the summon is refused | The timers of pets that are not dead stop when one is summoned |
+| A pet never renamed is called `None` in its tag and in death messages | The MCPets `DefaultName` is used |
+| A tamed pet's death message can reach the owner twice | Sent once, with the owners' names |
 
 Buttons added to the MCPets pet menu: Equipment (slot 1) and Convert to item (slot 8).
 
@@ -588,8 +694,13 @@ The config only holds settings. Every text is in `lang/<language>.yml`.
 | `dismount-on-death` | true | Riders get off when the pet dies |
 | `debug-dismount` / `debug-damage` | false | Debug logs in the console |
 | `mcpets-resistance-divide` | false | Keep the MCPets division by the ResistanceModifier |
+| `skill-cancels-melee` | 10 | Ticks during which a pet's other hits are cancelled after a `petAttack` (0 = off) |
+| `status-bar` | on | Health and mana bar under the pet name |
 | `pet-damage-over-time` | on, 2% + 1%/lvl | Poison and wither as % of max health |
 | `equipment-menu` | - | Equipment menu layout: button, slots, materials |
 | `box` | 45 pets, 5 s | Capacity, swap delay, display mode |
+| `skills-dialog` | 2 columns, 150 wide | Layout of the `/petskills` dialog |
+| `keybind` | on, `ADVANCEMENTS` | Key and commands of the skills keybind |
+| `block-vanilla-interact` | true | A right click on a pet never does the vanilla action of its mob |
 
-Language file sections: `convert-button`, `pet-item`, `max-level-text`, `name-tag-suffix`, `equipment`, `equipment-menu`, `box`, `messages`, `commands`, `editor`. Other files: `petfoods.yml` (foods) and `equipment.yml` (equipment, written by the editor). After a change: `/mcpetsultimate reload`.
+Language file sections: `convert-button`, `pet-item`, `max-level-text`, `name-tag-suffix`, `death-message-owner`, `equipment`, `equipment-menu`, `box`, `messages`, `skills-dialog`, `commands`, `editor`, `food-editor`. Other files: `foods.yml` (foods) and `equipment.yml` (equipment), both written by their editor. After a change by hand: `/mcpetsultimate reload`.
